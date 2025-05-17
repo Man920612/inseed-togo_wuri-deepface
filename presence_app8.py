@@ -66,7 +66,7 @@ def enregistrer_presence(tel, location, distance, status):
 
 def verifier_visage(ref_path, new_img):
     try:
-        result = DeepFace.verify(img1_path=ref_path, img2=new_img, enforce_detection=True)
+        result = DeepFace.verify(img1_path=ref_path, img2_path=new_img, enforce_detection=True)
         return result["verified"]
     except Exception as e:
         st.error(f"Erreur DeepFace : {e}")
