@@ -1,19 +1,18 @@
 import streamlit as st
 import cv2
 import numpy as np
-import time
 import os
+import time
+from deepface import DeepFace
 from geopy.distance import geodesic
 from streamlit_javascript import st_javascript
-import pandas as pd
 from datetime import datetime
-from deepface import DeepFace  # ✅ Utilisation de DeepFace
+import pandas as pd
 
-# Créer dossier pour stocker les photos si inexistant
+# Créer le dossier des photos s’il n’existe pas
 if not os.path.exists("photos"):
     os.makedirs("photos")
 
-# Fichier journal
 log_path = "journal_presence.csv"
 
 st.set_page_config(page_title="Contrôle de Présence", layout="centered")
@@ -25,6 +24,7 @@ choice = st.sidebar.radio("Navigation", menu)
 if "base_location" not in st.session_state:
     st.session_state.base_location = None
 
+# Récupérer les coordonnées GPS via navigateur
 def get_real_location():
     coords = st_javascript("""
         navigator.geolocation.getCurrentPosition(
@@ -40,6 +40,7 @@ def get_real_location():
     """)
     return tuple(coords) if coords else None
 
+# Capture image webcam
 def capture_image():
     cap = cv2.VideoCapture(0)
     time.sleep(1)
@@ -49,6 +50,13 @@ def capture_image():
         return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     return None
 
+# Sauvegarder image agent
+def save_image(img_rgb, tel):
+    path = f"photos/{tel}.jpg"
+    cv2.imwrite(path, cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR))
+    return path
+
+# Enregistrer la présence
 def enregistrer_presence(tel, location, distance, status):
     log_data = {
         "Telephone": tel,
@@ -64,15 +72,7 @@ def enregistrer_presence(tel, location, distance, status):
     else:
         df.to_csv(log_path, mode='a', header=False, index=False)
 
-def verifier_visage(ref_path, new_img):
-    try:
-        result = DeepFace.verify(img1_path=ref_path, img2_path=new_img, enforce_detection=True)
-        return result["verified"]
-    except Exception as e:
-        st.error(f"Erreur DeepFace : {e}")
-        return False
-
-# 📷 ENREGISTREMENT
+# === 📷 ENREGISTREMENT ===
 if choice == "📷 Enregistrement":
     st.subheader("Étape 1 : Enregistrement de l'agent")
     tel = st.text_input("Numéro de téléphone de l'agent", max_chars=8)
@@ -80,10 +80,10 @@ if choice == "📷 Enregistrement":
     if len(tel) == 8 and tel.isdigit():
         location = get_real_location()
         if location:
-            st.success(f"📌 Coordonnées détectées automatiquement : {location}")
+            st.success(f"📌 Coordonnées GPS détectées : {location}")
             st.session_state.base_location = location
         else:
-            st.warning("⚠️ GPS indisponible. Entrez manuellement :")
+            st.warning("⚠️ GPS non disponible. Veuillez entrer manuellement.")
             lat = st.number_input("Latitude manuelle", value=6.1319, format="%.6f")
             lon = st.number_input("Longitude manuelle", value=1.2228, format="%.6f")
             location = (lat, lon)
@@ -92,78 +92,78 @@ if choice == "📷 Enregistrement":
         if st.button("📸 Capturer et Enregistrer"):
             img = capture_image()
             if img is not None:
-                cv2.imwrite(f"photos/{tel}.jpg", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                save_image(img, tel)
                 st.image(img, caption="Image capturée", use_container_width=True)
                 st.success("✅ Agent enregistré avec succès.")
-                st.info(f"Coordonnées de référence : {location}")
             else:
-                st.error("Erreur de capture.")
+                st.error("Erreur lors de la capture d'image.")
     else:
-        st.warning("Numéro invalide (8 chiffres).")
+        st.warning("Entrez un numéro valide (8 chiffres).")
 
-# ✅ VÉRIFICATION
+# === ✅ VÉRIFICATION ===
 elif choice == "✅ Vérification":
     st.subheader("Étape 2 : Vérification de la présence")
     tel = st.text_input("Numéro de téléphone de l'agent", max_chars=8)
 
     if len(tel) == 8 and tel.isdigit():
-        path = f"photos/{tel}.jpg"
-        if not os.path.exists(path):
-            st.error("❌ Aucun enregistrement pour ce numéro.")
+        ref_path = f"photos/{tel}.jpg"
+        if not os.path.exists(ref_path):
+            st.error("❌ Aucun enregistrement trouvé pour ce numéro.")
         else:
             location = get_real_location()
             if location:
                 st.success(f"📌 Position actuelle : {location}")
             else:
-                st.warning("⚠️ GPS indisponible. Entrez manuellement :")
+                st.warning("⚠️ GPS non disponible. Veuillez entrer manuellement.")
                 lat = st.number_input("Latitude actuelle", value=6.1319, format="%.6f")
                 lon = st.number_input("Longitude actuelle", value=1.2228, format="%.6f")
                 location = (lat, lon)
 
             if st.button("📸 Vérifier la Présence") and location:
-                new_img = capture_image()
-                if new_img is not None:
-                    match = verifier_visage(path, new_img)
-                    distance = geodesic(st.session_state.base_location, location).meters
-                    st.image(new_img, caption="Image capturée", use_container_width=True)
+                captured_img = capture_image()
+                if captured_img is not None:
+                    temp_img_path = f"photos/temp_{tel}.jpg"
+                    cv2.imwrite(temp_img_path, cv2.cvtColor(captured_img, cv2.COLOR_RGB2BGR))
 
-                    if match:
-                        if distance <= 100:
-                            st.success(f"✅ Agent reconnu à {int(distance)} m : Présence validée.")
-                            enregistrer_presence(tel, location, distance, "Validée")
+                    try:
+                        result = DeepFace.verify(
+                            img1_path=ref_path,
+                            img2_path=temp_img_path,
+                            enforce_detection=True
+                        )
+                        distance_m = geodesic(st.session_state.base_location, location).meters
+                        st.image(captured_img, caption="Image capturée", use_container_width=True)
+
+                        if result["verified"]:
+                            if distance_m <= 100:
+                                st.success(f"✅ Agent reconnu à {int(distance_m)} m : Présence validée.")
+                                enregistrer_presence(tel, location, distance_m, "Validée")
+                            else:
+                                st.error(f"❌ Trop éloigné : {int(distance_m)} m > 100 m.")
+                                enregistrer_presence(tel, location, distance_m, "Refusée - Trop éloigné")
                         else:
-                            st.error(f"❌ Trop éloigné : {int(distance)} m > 100 m.")
-                            enregistrer_presence(tel, location, distance, "Refusée - Trop éloigné")
-                    else:
-                        st.error("❌ Visage non reconnu.")
-                        enregistrer_presence(tel, location, 0, "Refusée - Visage non reconnu")
+                            st.error("❌ Visage non reconnu.")
+                            enregistrer_presence(tel, location, 0, "Refusée - Visage non reconnu")
+                    except Exception as e:
+                        st.error(f"Erreur DeepFace : {e}")
                 else:
-                    st.error("Erreur de webcam.")
+                    st.error("Erreur de capture via webcam.")
     else:
-        st.warning("Numéro invalide (8 chiffres).")
+        st.warning("Entrez un numéro valide (8 chiffres).")
 
-# 📊 JOURNAL DE PRÉSENCE
+# === 📊 JOURNAL ===
 elif choice == "📊 Journal de Présence":
     st.subheader("📊 Journal de Présence des Agents")
     if os.path.exists(log_path):
         df = pd.read_csv(log_path)
 
-        # Filtrage par téléphone
-        unique_tels = df["Telephone"].unique().tolist()
-        tel_filter = st.selectbox("Filtrer par numéro de téléphone", ["Tous"] + unique_tels)
-
+        tel_filter = st.selectbox("Filtrer par numéro de téléphone", ["Tous"] + df["Telephone"].unique().tolist())
         if tel_filter != "Tous":
             df = df[df["Telephone"] == tel_filter]
 
         st.dataframe(df, use_container_width=True)
 
-        # Bouton de téléchargement
         csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="📤 Télécharger le journal CSV",
-            data=csv,
-            file_name="journal_presence.csv",
-            mime="text/csv"
-        )
+        st.download_button("📤 Télécharger le journal CSV", data=csv, file_name="journal_presence.csv", mime="text/csv")
     else:
-        st.info("Aucune donnée de présence enregistrée pour l’instant.")
+        st.info("Aucune présence enregistrée.")
