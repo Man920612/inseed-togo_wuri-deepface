@@ -1,8 +1,9 @@
 streamlit
-streamlit-javascript
-opencv-python-headless
-geopy
+opencv-python
+numpy
 pandas
-deepface
+geopy
+streamlit-javascript
+deepface==0.0.79
 tensorflow==2.12.0
-
+keras==2.12.0
