@@ -1,7 +1,7 @@
-streamlit==1.35.0
-opencv-python
-deepface
-pandas
-geopy
+streamlit
 streamlit-javascript
-numpy
+opencv-python-headless
+geopy
+pandas
+deepface
+tensorflow
