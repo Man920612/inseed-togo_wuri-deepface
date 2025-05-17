@@ -4,4 +4,5 @@ opencv-python-headless
 geopy
 pandas
 deepface
-tensorflow
+tensorflow==2.12.0
+
